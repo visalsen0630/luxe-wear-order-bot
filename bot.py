@@ -1,4 +1,7 @@
 import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -6,9 +9,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-PORT = int(os.getenv("PORT", 3000))
+BOT_TOKEN        = os.getenv("BOT_TOKEN")
+CHAT_ID          = os.getenv("CHAT_ID")
+GMAIL_USER       = os.getenv("GMAIL_USER")
+GMAIL_APP_PASS   = os.getenv("GMAIL_APP_PASSWORD")
+PORT             = int(os.getenv("PORT", 3000))
 
 if not BOT_TOKEN or not CHAT_ID:
     raise RuntimeError("Missing BOT_TOKEN or CHAT_ID in .env file")
@@ -17,6 +22,7 @@ app = Flask(__name__)
 CORS(app)
 
 
+# ── Telegram ──────────────────────────────────────────────────────────────────
 def send_telegram(message: str):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {
@@ -29,18 +35,89 @@ def send_telegram(message: str):
     resp.raise_for_status()
 
 
+# ── Gmail ──────────────────────────────────────────────────────────────────────
+def send_email(to_email: str, subject: str, html_body: str):
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"]    = f"Luxe Wear <{GMAIL_USER}>"
+    msg["To"]      = to_email
+    msg.attach(MIMEText(html_body, "html"))
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(GMAIL_USER, GMAIL_APP_PASS)
+        server.sendmail(GMAIL_USER, to_email, msg.as_string())
+
+
+# ── POST /send-code  — email verification during signup ───────────────────────
+@app.route("/send-code", methods=["POST"])
+def send_verification_code():
+    data  = request.get_json(force=True)
+    email = data.get("email", "")
+    code  = data.get("code", "")
+    name  = data.get("name", "Guest")
+
+    if not email or not code:
+        return jsonify(ok=False, error="Missing email or code"), 400
+
+    if not GMAIL_USER or not GMAIL_APP_PASS:
+        return jsonify(ok=False, error="Gmail not configured on server"), 500
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body {{ font-family: 'Helvetica Neue', Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }}
+        .wrapper {{ max-width: 480px; margin: 40px auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }}
+        .header {{ background: #0a0a0a; padding: 36px 40px; text-align: center; }}
+        .header h1 {{ color: #fff; font-size: 20px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; margin: 0; }}
+        .body {{ padding: 40px; text-align: center; }}
+        .greeting {{ font-size: 16px; color: #333; margin-bottom: 8px; }}
+        .subtitle {{ font-size: 13px; color: #888; margin-bottom: 32px; }}
+        .code-box {{ display: inline-block; background: #f8f8f8; border: 2px solid #e5e5e5; border-radius: 12px; padding: 20px 40px; margin-bottom: 28px; }}
+        .code {{ font-size: 42px; font-weight: 700; letter-spacing: 0.25em; color: #0a0a0a; }}
+        .note {{ font-size: 12px; color: #aaa; margin-bottom: 8px; }}
+        .footer {{ background: #f8f8f8; padding: 24px 40px; text-align: center; font-size: 11px; color: #bbb; }}
+      </style>
+    </head>
+    <body>
+      <div class="wrapper">
+        <div class="header"><h1>Luxe Wear</h1></div>
+        <div class="body">
+          <p class="greeting">Hi {name},</p>
+          <p class="subtitle">Use the code below to verify your email and create your account.</p>
+          <div class="code-box">
+            <div class="code">{code}</div>
+          </div>
+          <p class="note">This code expires in <strong>10 minutes</strong>.</p>
+          <p class="note">If you didn't request this, you can safely ignore this email.</p>
+        </div>
+        <div class="footer">© {os.getenv("YEAR", "2026")} Luxe Wear · All rights reserved</div>
+      </div>
+    </body>
+    </html>
+    """
+
+    try:
+        send_email(email, "Your Luxe Wear verification code", html)
+        return jsonify(ok=True)
+    except Exception as e:
+        print(f"Email error: {e}")
+        return jsonify(ok=False, error="Failed to send email"), 500
+
+
 # ── POST /order  — called when customer clicks "CONTINUE TO PAYMENT" ──────────
 @app.route("/order", methods=["POST"])
 def receive_order():
     data = request.get_json(force=True)
 
-    full_name    = data.get("fullName", "")
-    email        = data.get("email", "N/A")
-    phone        = data.get("phone", "")
-    location     = data.get("locationLink", "")
-    currency     = data.get("currency", "USD")
-    items        = data.get("items", [])
-    total        = data.get("total", "0")
+    full_name = data.get("fullName", "")
+    email     = data.get("email", "N/A")
+    phone     = data.get("phone", "")
+    location  = data.get("locationLink", "")
+    currency  = data.get("currency", "USD")
+    items     = data.get("items", [])
+    total     = data.get("total", "0")
 
     if not full_name or not phone or not items:
         return jsonify(ok=False, error="Missing required fields"), 400
