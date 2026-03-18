@@ -119,8 +119,10 @@ def send_verification_code():
         send_email(email, "Your Luxe Wear verification code", html)
         return jsonify(ok=True)
     except Exception as e:
+        import traceback
         print(f"Email error: {e}")
-        return jsonify(ok=False, error="Failed to send email"), 500
+        print(traceback.format_exc())
+        return jsonify(ok=False, error=str(e)), 500
 
 
 # ── POST /order  — called when customer clicks "CONTINUE TO PAYMENT" ──────────
