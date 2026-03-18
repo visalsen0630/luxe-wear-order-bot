@@ -8,7 +8,7 @@ load_dotenv()
 
 BOT_TOKEN        = os.getenv("BOT_TOKEN")
 CHAT_ID          = os.getenv("CHAT_ID")
-RESEND_API_KEY   = os.getenv("RESEND_API_KEY")
+BREVO_API_KEY    = os.getenv("BREVO_API_KEY")
 GMAIL_USER       = os.getenv("GMAIL_USER")
 PORT             = int(os.getenv("PORT", 3000))
 
@@ -48,24 +48,24 @@ def send_telegram(message: str):
     resp.raise_for_status()
 
 
-# ── Resend ─────────────────────────────────────────────────────────────────────
+# ── Brevo ──────────────────────────────────────────────────────────────────────
 def send_email(to_email: str, subject: str, html_body: str):
     resp = requests.post(
-        "https://api.resend.com/emails",
+        "https://api.brevo.com/v3/smtp/email",
         headers={
-            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "api-key": BREVO_API_KEY,
             "Content-Type": "application/json",
         },
         json={
-            "from": "Luxe Wear <onboarding@resend.dev>",
-            "to": [to_email],
+            "sender": {"name": "Luxe Wear", "email": GMAIL_USER},
+            "to": [{"email": to_email}],
             "subject": subject,
-            "html": html_body,
+            "htmlContent": html_body,
         },
         timeout=15,
     )
     if resp.status_code not in (200, 201):
-        raise Exception(f"Resend error {resp.status_code}: {resp.text}")
+        raise Exception(f"Brevo error {resp.status_code}: {resp.text}")
 
 
 # ── POST /send-code  — email verification during signup ───────────────────────
@@ -79,8 +79,8 @@ def send_verification_code():
     if not email or not code:
         return jsonify(ok=False, error="Missing email or code"), 400
 
-    if not RESEND_API_KEY:
-        return jsonify(ok=False, error="Resend not configured on server"), 500
+    if not BREVO_API_KEY:
+        return jsonify(ok=False, error="Brevo not configured on server"), 500
 
     html = f"""
     <!DOCTYPE html>
