@@ -1,7 +1,4 @@
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -11,8 +8,8 @@ load_dotenv()
 
 BOT_TOKEN        = os.getenv("BOT_TOKEN")
 CHAT_ID          = os.getenv("CHAT_ID")
+RESEND_API_KEY   = os.getenv("RESEND_API_KEY")
 GMAIL_USER       = os.getenv("GMAIL_USER")
-GMAIL_APP_PASS   = os.getenv("GMAIL_APP_PASSWORD")
 PORT             = int(os.getenv("PORT", 3000))
 
 if not BOT_TOKEN or not CHAT_ID:
@@ -51,17 +48,24 @@ def send_telegram(message: str):
     resp.raise_for_status()
 
 
-# ── Gmail ──────────────────────────────────────────────────────────────────────
+# ── Resend ─────────────────────────────────────────────────────────────────────
 def send_email(to_email: str, subject: str, html_body: str):
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"]    = f"Luxe Wear <{GMAIL_USER}>"
-    msg["To"]      = to_email
-    msg.attach(MIMEText(html_body, "html"))
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-        server.starttls()
-        server.login(GMAIL_USER, GMAIL_APP_PASS)
-        server.sendmail(GMAIL_USER, to_email, msg.as_string())
+    resp = requests.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": "Luxe Wear <onboarding@resend.dev>",
+            "to": [to_email],
+            "subject": subject,
+            "html": html_body,
+        },
+        timeout=15,
+    )
+    if resp.status_code not in (200, 201):
+        raise Exception(f"Resend error {resp.status_code}: {resp.text}")
 
 
 # ── POST /send-code  — email verification during signup ───────────────────────
@@ -75,8 +79,8 @@ def send_verification_code():
     if not email or not code:
         return jsonify(ok=False, error="Missing email or code"), 400
 
-    if not GMAIL_USER or not GMAIL_APP_PASS:
-        return jsonify(ok=False, error="Gmail not configured on server"), 500
+    if not RESEND_API_KEY:
+        return jsonify(ok=False, error="Resend not configured on server"), 500
 
     html = f"""
     <!DOCTYPE html>
