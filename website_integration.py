@@ -5,7 +5,7 @@ If your website backend is Python (e.g. Django / FastAPI), use these helpers.
 
 import requests
 
-BOT_SERVER_URL = "http://localhost:3000"  # ← change to your deployed server URL
+BOT_SERVER_URL = "web-production-ab0b0.up.railway.app"  # ← change to your deployed server URL
 
 
 def submit_order(full_name, email, phone, location_link, currency, items, total):
